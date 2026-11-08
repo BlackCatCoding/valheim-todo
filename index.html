@@ -155,11 +155,18 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
 .stack{display:flex;flex-direction:column;gap:14px}
 .seq{display:flex;flex-direction:column;gap:8px}
 .item{
-  position:relative;display:flex;gap:10px;align-items:center;
+  position:relative;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
   background:var(--card2);border:1px solid var(--line);
   border-radius:11px;padding:9px 11px;cursor:pointer;
   transition:border-color .14s,background .14s
 }
+/* receita expandida dentro do item (varias podem ficar abertas) */
+.item .inrecipe{
+  flex:1 1 100%;margin-top:8px;width:100%;position:relative;
+  background:var(--card);border:1px solid var(--line);border-radius:9px;
+  padding:10px 12px
+}
+.item .inrecipe .rrow{font-size:12.5px}
 .item:hover{border-color:var(--line2)}
 .item .ph{
   flex:0 0 44px;width:44px;height:44px;
@@ -207,6 +214,14 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
   content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
   background:linear-gradient(var(--accent),var(--gold))
 }
+.rclose{
+  position:absolute;top:8px;right:8px;z-index:1;
+  width:22px;height:22px;border-radius:50%;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);color:var(--mut);
+  font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:all .12s
+}
+.rclose:hover{border-color:var(--accent);color:var(--txt)}
 .rtitle{
   font-size:14px;font-weight:700;margin-bottom:9px;padding-left:6px
 }
@@ -256,7 +271,7 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
       <div class="col-head">
         <h2>Catálogo <span class="count" id="cCat">0</span></h2>
       </div>
-      <p class="note">Clique numa imagem para incluí-la na fila. Use busca, categoria ou biome para filtrar.</p>
+      <p class="note">Clique num item para ver a <b>receita</b>; use o botão <b>+</b> para incluí-lo na fila. Busca, categoria e biome filtram.</p>
       <div class="grid" id="grid"></div>
     </section>
 
@@ -265,7 +280,7 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
         <div class="col-head">
           <h2>To-Do <span class="count" id="cToDo">0</span></h2>
         </div>
-        <p class="note">Clique no item para marcá-lo como <b>feito</b>. O destaque dourado é o <b>próximo</b>.</p>
+        <p class="note">Clique no item para <b>ver a receita</b>. O destaque dourado é o <b>próximo</b>.</p>
         <div class="seq" id="todo"></div>
         <div id="recipe"></div>
       </section>
@@ -328,7 +343,7 @@ try {
 } catch(e){}
 if (!state.todo) state.todo = [];
 if (!state.done) state.done = [];
-let view = { q:"", cat:"", biome:"", showCost:false };
+let view = { q:"", cat:"", biome:"", showCost:false, recipe:"", expand:new Set() };
 function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
 const inTodo = id => state.todo.includes(id);
 const inDone = id => state.done.includes(id);
@@ -343,13 +358,11 @@ function costText(o){
   return '<span class="craft">⚒ '+st+ing+'</span>';
 }
 
-/* Box de receita: mostra os materiais do próximo na fila */
-function recipeBox(){
-  const box = document.getElementById("recipe");
-  if (!box) return;
-  const id = state.todo[0];
-  if (!id){ box.innerHTML = ""; return; }
+/* Gera o conteúdo de uma receita (usado pela caixa lateral e pelas
+   receitas expandidas em cada item da fila). */
+function recipeHTML(id, tagText){
   const o = BY_ID[id];
+  if (!o) return "";
   const head = [];
   if (o.s) head.push('<span class="rstation">⚒ '+(o.s==="Mão"||o.s===""?"Mão":o.s)+"</span>");
   if (o.b) head.push('<span class="rbio">'+o.b+"</span>");
@@ -367,20 +380,46 @@ function recipeBox(){
     '<span class="ramt up">+'+c[2]+'/nv</span></div>'
   ).join("");
 
+  return (
+    '<div class="rtitle">'+o.n+(tagText?'<span class="rtag">'+tagText+'</span>':"")+'</div>'+
+    (head.length ? '<div class="rhead">'+head.join("")+'</div>' : "")+
+    (base.length ? '<div class="rlist">'+rows+"</div>" : '<div class="rnote">Sem receita de craft — item obtido por outro meio (loot, caça, pescaria…).</div>')+
+    (upRows ? '<div class="rlist" style="margin-top:6px">'+upRows+'</div>' : "")
+  );
+}
+
+/* Mostra a receita de um item do catálogo na caixa lateral, sem
+   obrigatoriamente mover pra fila. */
+function showRecipe(id){ view.recipe = id; view.expand.delete(id); render(); }
+function closeRecipe(){ view.recipe = ""; render(); }
+function toggleExpand(id){
+  view.expand.has(id) ? view.expand.delete(id) : view.expand.add(id);
+  if (view.expand.size) view.recipe = ""; // fecha a caixa lateral
+  render();
+}
+
+/* Box de receita da caixa lateral: item do catálogo selecionado,
+   ou (se não houver) o próximo da fila. */
+function recipeBox(){
+  const box = document.getElementById("recipe");
+  if (!box) return;
+  const id = view.recipe || state.todo[0];
+  if (!id){ box.innerHTML = ""; return; }
+  const o = BY_ID[id];
+  if (!o){ box.innerHTML = ""; return; }
+  const fromQueue = !view.recipe;
   box.innerHTML =
     '<div class="recipe">'+
-      '<div class="rtitle">'+o.n+'<span class="rtag">próximo na fila</span></div>'+
-      (head.length ? '<div class="rhead">'+head.join("")+"</div>" : "")+
-      (base.length ? '<div class="rlist">'+rows+"</div>" : '<div class="rnote">Sem receita de craft — item obtido por outro meio (loot, caça, pescaria…).</div>')+
-      (upRows ? '<div class="rlist" style="margin-top:6px">'+upRows+'</div>' : "")+
+      '<button class="rclose" title="Fechar" onclick="closeRecipe()">×</button>'+
+      recipeHTML(id, fromQueue ? "próximo na fila" : "do catálogo")+
     "</div>";
 }
 
 /* ── actions ── */
 function addToDo(id){ if(!inTodo(id)&&!inDone(id)){ state.todo.push(id); save(); render(); } }
-function complete(id){ if(inTodo(id)){ state.todo=state.todo.filter(x=>x!==id); state.done.push(id); save(); render(); } }
+function complete(id){ if(inTodo(id)){ state.todo=state.todo.filter(x=>x!==id); state.done.push(id); view.expand.delete(id); if(view.recipe===id) view.recipe=""; save(); render(); } }
 function reopen(id){ if(inDone(id)){ state.done=state.done.filter(x=>x!==id); state.todo.push(id); save(); render(); } }
-function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[]}; save(); render(); } }
+function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[]}; view.recipe=""; view.expand=new Set(); save(); render(); } }
 
 /* ── render ── */
 function render(){
@@ -395,7 +434,7 @@ function render(){
 
   const grid = document.getElementById("grid");
   grid.innerHTML = avail.length ? avail.map(o =>
-    '<div class="tile" onclick="addToDo(\''+o.id+'\')">'+
+    '<div class="tile" onclick="showRecipe(\''+o.id+'\')">'+
       '<div class="ph">'+iconBlock(o)+'</div>'+
       '<div class="info">'+
         '<div class="nm" title="'+o.n+'">'+o.n+'</div>'+
@@ -406,7 +445,7 @@ function render(){
         '</div>'+
         (view.showCost && o.cost.length ? '<div class="costline">'+costText(o)+'</div>' : "")+
       '</div>'+
-      '<div class="plus">+</div>'+
+      '<div class="plus" title="Adicionar à fila" onclick="event.stopPropagation();addToDo(\''+o.id+'\')">+</div>'+
     '</div>'
   ).join("") : '<div class="empty" style="grid-column:1/-1">Nenhum item disponível com esses filtros.</div>';
   document.getElementById("cCat").textContent = avail.length;
@@ -414,13 +453,24 @@ function render(){
   /* to-do */
   const tEl = document.getElementById("todo");
   tEl.innerHTML = state.todo.length ? state.todo.map((id,i) => {
-    const o = BY_ID[id], nx = i===0;
-    return '<div class="item'+(nx?' next':"")+'" onclick="complete(\''+o.id+'\')">'+
+    const o = BY_ID[id], nx = i===0, open = view.expand.has(id);
+    const expanded = open
+      ? '<div class="inrecipe" onclick="event.stopPropagation()">'+
+          '<button class="rclose" title="Fechar" onclick="toggleExpand(\''+id+'\')">×</button>'+
+          recipeHTML(id)+"</div>"
+      : "";
+    return '<div class="item'+(nx?' next':"")+'">'+
       (nx ? '<div class="badge">▶ próximo</div>' : "")+
-      '<div class="ph">'+iconBlock(o)+'</div>'+
-      '<div class="meta"><div class="nm">'+o.n+'</div>'+
-        '<div class="sub">'+o.c+(o.b?" · "+o.b:"")+(o.cost.length?" · "+costText(o):"")+'</div></div>'+
-      '<div class="act"><button title="Feito" onclick="event.stopPropagation();complete(\''+o.id+'\')">✓</button></div>'+
+      '<div class="ph" onclick="toggleExpand(\''+id+'\')">'+iconBlock(o)+'</div>'+
+      '<div class="meta" onclick="toggleExpand(\''+id+'\')">'+
+        '<div class="nm">'+o.n+'</div>'+
+        '<div class="sub">'+o.c+(o.b?" · "+o.b:"")+(o.cost.length?" · "+costText(o):"")+'</div>'+
+      '</div>'+
+      '<div class="act">'+
+        '<button title="Fechar/abrir receita" onclick="event.stopPropagation();toggleExpand(\''+id+'\')">'+(open?"▾":"⚒")+'</button>'+
+        '<button title="Feito" onclick="event.stopPropagation();complete(\''+o.id+'\')">✓</button>'+
+      '</div>'+
+      expanded+
     '</div>';
   }).join("") : '<div class="empty">Fila vazia — clique num item do catálogo para começar.</div>';
 
