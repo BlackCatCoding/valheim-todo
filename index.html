@@ -333,13 +333,16 @@ const KEY = "valheim-todo-v2";
 let state;
 try { state = JSON.parse(localStorage.getItem(KEY)) || {todo:[],done:[]}; }
 catch(e){ state = {todo:[],done:[]}; }
-// migrate from v1 (if present)
+// migrate from v1 — só na 1ª vez (quando o v2 ainda não existe); depois disso
+// apaga a chave v1 para ela nunca mais sobrescrever o estado atual a cada carga
 try {
   const raw1 = localStorage.getItem("valheim-todo-v1");
-  if (raw1) {
+  if (raw1 && !localStorage.getItem(KEY)) {
     const old = JSON.parse(raw1);
     state = { todo:[...new Set([ ...(old.todo||[]), ...(old.done||[])])], done:[] };
+    save();
   }
+  if (raw1) localStorage.removeItem("valheim-todo-v1");
 } catch(e){}
 if (!state.todo) state.todo = [];
 if (!state.done) state.done = [];
