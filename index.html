@@ -143,6 +143,41 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
 .tile .costline{font-size:10px;color:var(--dim);line-height:1.3;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{color:var(--dim);font-size:13px;padding:16px 4px;text-align:center}
+/* ── caixa de materiais (totais da fila) ── */
+.mats{margin:0 14px 14px}
+.mats h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);
+  margin:0 0 8px;font-weight:700}
+.mats h3 small{color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0}
+.mrow{display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 6px;cursor:pointer;
+  border-radius:6px}
+.mrow:hover{background:rgba(255,255,255,.04)}
+.mrow .rmic{flex:0 0 22px;width:22px;height:22px;display:flex;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.28);border-radius:5px;overflow:hidden}
+.mrow .rmic img{max-width:20px;max-height:20px;image-rendering:pixelated}
+.mrow .rmic svg{width:12px;height:12px;opacity:.65}
+.mrow .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .qty{font-weight:800;color:var(--gold);font-size:12px;white-space:nowrap}
+.mrow .up{font-size:9.5px;color:var(--dim)}
+.mrow.zero{opacity:.45}
+.mrow.zero .nm{text-decoration:line-through}
+.mrow.zero .qty{color:var(--dim)}
+.mstations{margin-top:8px;font-size:10.5px;color:var(--mut);line-height:1.5}
+.mstations b{color:var(--txt);font-weight:600}
+/* headers de mesa na categoria Crafting */
+.ghead{grid-column:1/-1;margin:14px 0 4px;font-size:11px;font-weight:800;
+  letter-spacing:.06em;color:var(--gold);text-transform:uppercase;
+  border-bottom:1px solid var(--line);padding-bottom:4px}
+.ghead:first-child{margin-top:0}
+.ghcount{font-weight:400;color:var(--dim);letter-spacing:0;text-transform:none}
+/* opções por item da fila (quantidade / urgência) */
+.itemopts{display:flex;gap:6px;align-items:center;flex:1 1 100%;margin-top:4px}
+.itemopts label{font-size:9.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+.qsel,.usel{background:var(--card);border:1px solid var(--line);color:var(--txt);
+  border-radius:6px;font-size:10.5px;padding:2px 4px;max-width:86px}
+.usel.on{border-color:rgba(224,60,60,.6);color:#ff9c9c;font-weight:700}
+.mbadge{font-size:9px;font-weight:800;color:#ff9c9c;background:rgba(224,60,60,.15);
+  border:1px solid rgba(224,60,60,.5);padding:1px 6px;border-radius:4px;
+  letter-spacing:.4px;text-transform:uppercase;vertical-align:1px}
 
 /* ── side panels (to-do / feitos) ── */
 .stack{display:flex;flex-direction:column;gap:14px}
@@ -269,6 +304,16 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
     </section>
 
     <aside class="stack">
+      <section class="panel" id="matsPanel">
+        <div class="col-head">
+          <h2>Materiais <span class="count" id="cMats">0</span></h2>
+        </div>
+        <p class="note">Soma dos <b>materiais necessários</b> para craftar toda a fila, contando a <b>quantidade</b> de cada item. Mesas exigidas aparecem abaixo.</p>
+        <div class="mats">
+          <div class="mrows" id="mrows"></div>
+          <div class="mstations" id="mstations"></div>
+        </div>
+      </section>
       <section class="panel">
         <div class="col-head">
           <h2>To-Do <span class="count" id="cToDo">0</span></h2>
@@ -295,11 +340,46 @@ const ICON = ic => "icons/" + ic + ".png";
 /* material -> item (para achar o ícone de cada ingrediente da receita) */
 const MAT_ICON = {};
 ITEMS.forEach(o => { if (o.ic && !MAT_ICON[o.n.toLowerCase()]) MAT_ICON[o.n.toLowerCase()] = o.ic; });
+const MAPA_NAME = {};
+ITEMS.forEach(o => { if (!MAPA_NAME[o.n.toLowerCase()]) MAPA_NAME[o.n.toLowerCase()] = o.id; });
 function matIcon(name){
   const ic = MAT_ICON[name.toLowerCase()];
   if (!ic) return '<span class="rmic">'+catGlyph("Material")+"</span>";
   return '<span class="rmic"><img loading="lazy" src="'+ICON(ic)+'" alt="" '
     +'onerror="this.outerHTML=catGlyph(\'Material\')"></span>';
+}
+/* Normaliza o nome da estação para agrupar pela categoria Crafting
+   (itens sem estação / feitos à mão -> "Mão / sem estação"). */
+function stationKey(o){
+  const s = (o.s||"").trim();
+  if (!s || s.startsWith("(") || s==="Mão") return "Mão / sem estação";
+  const m = s.replace(/\W+/g,"").toLowerCase();
+  const map = [
+    ["workbench","Workbench"],
+    ["blackforge","Black Forge"],
+    ["forge","Forge"],
+    ["smelter","Smelter"],
+    ["foundingry","Frost Foundry"],
+    ["stonecutter","Stonecutter"],
+    ["fermenter","Fermenter"],
+    ["foodprep","Food Preparation Table"],
+    ["artisantable","Artisan Table"],
+    ["galdr","Galdr Table"],
+    ["cooking","Cooking Station"],
+    ["oven","Stone Oven"],
+    ["mead","Mead Ketill"],
+    ["windmill","Windmill"],
+    ["eitr","Eitr Refinery"],
+    ["blast","Blast Furnace"],
+    ["charcoal","Charcoal Kiln"],
+    ["cauldron","Cauldron"],
+    ["spinning","Spinning Wheel"],
+    ["cultivator","Cultivator"],
+    ["blob","Throw Blob Bomb"],
+    ["hatch","Hatch"]
+  ];
+  for (const [k,v] of map){ if (m.includes(k)) return v; }
+  return s;
 }
 
 /* ── glifos SVG por categoria (fallback quando não há imagem) ── */
@@ -339,10 +419,33 @@ try {
 } catch(e){}
 if (!state.todo) state.todo = [];
 if (!state.done) state.done = [];
+if (!state.opts) state.opts = {};
 let view = { q:"", cat:"", biome:"", showCost:false, recipe:"", expand:new Set() };
 function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
 const inTodo = id => state.todo.includes(id);
 const inDone = id => state.done.includes(id);
+/* opções por item da fila: quantidade (1-99) e urgência */
+const opt = id => state.opts[id] || {q:1};
+function setQty(id,v){ v=Math.max(1,Math.min(99,parseInt(v)||1)); state.opts[id]={...(state.opts[id]||{}),q:v}; save(); render(); }
+function toggleUrg(id){ const u=!(state.opts[id]&&state.opts[id].u); state.opts[id]={...(state.opts[id]||{}),u}; save(); render(); }
+
+/* remove um item DA FILA sem marcá-lo como feito (a caixa de materiais
+   não reflete mais; ele volta a aparecer no catálogo) */
+function removeTodo(id){
+  if(!inTodo(id)) return;
+  state.todo=state.todo.filter(x=>x!==id);
+  delete state.opts[id];
+  view.expand.delete(id);
+  if(view.recipe===id) view.recipe="";
+  save(); render();
+}
+/* move um item da fila para a posição p (0-based) */
+function moveTodo(id,p){
+  const i=state.todo.indexOf(id); if(i<0) return;
+  state.todo.splice(i,1);
+  state.todo.splice(Math.max(0,Math.min(p,state.todo.length)),0,id);
+  save(); render();
+}
 
 function costText(o){
   if (!o.cost.length) return "";
@@ -391,6 +494,13 @@ function showRecipe(id){
   if (!inTodo(id) && !inDone(id)) state.todo.push(id);
   view.recipe = id; view.expand.delete(id); save(); render();
 }
+/* clique num material da box de Materiais: se o material for craftável,
+   adiciona à fila + mostra a receita; senão só mostra a receita. */
+function pickCatalog(name){
+  const id = MAPA_NAME[name.toLowerCase()];
+  if (id && BY_ID[id]){ showRecipe(id); }
+  else { view.recipe = ""; render(); } // sem receita conhecida — fecha a box
+}
 function closeRecipe(){ view.recipe = ""; render(); }
 function toggleExpand(id){
   view.expand.has(id) ? view.expand.delete(id) : view.expand.add(id);
@@ -415,57 +525,129 @@ function recipeBox(){
     "</div>";
 }
 
+/* Soma os materiais necessários para craftar TUDO da fila, multiplicando
+   pelo qtd de cada item (state.opts). "Escolha 1 de N" (a:true) conta um
+   conjunto (c[1] de qualquer escolha). */
+function materialsBox(){
+  const rowsEl = document.getElementById("mrows");
+  const stEl = document.getElementById("mstations");
+  if (!rowsEl || !stEl) return;
+
+  const agg = {}, order = [], allSt = new Set();
+  for (const id of state.todo){
+    const o = BY_ID[id];
+    if (!o) continue;
+    const q = opt(id).q;
+    if (o.s) allSt.add(stationKey(o));
+    for (const c of o.cost){
+      const name = c[0];
+      if (!agg[name]){ agg[name] = 0; agg["^"+name] = 0; order.push(name); }
+      agg[name] += (c[1]||0) * q;
+      if (c.length>2 && c[2]>0) agg["^"+name] += c[2] * q;
+    }
+  }
+
+  rowsEl.innerHTML = order.length ? order.map(name => {
+    const qty = agg[name], up = agg["^"+name];
+    const ic = MAT_ICON[name.toLowerCase()];
+    const icon = ic
+      ? '<span class="rmic"><img loading="lazy" src="'+ICON(ic)+'" alt="" onerror="this.outerHTML=catGlyph(\'Material\')"></span>'
+      : '<span class="rmic">'+catGlyph("Material")+'</span>';
+    const upTag = up ? '<span class="up">+'+up+'/nv</span> ' : "";
+    return '<div class="mrow" title="Adicionar '+name+' à fila / ver receita" onclick="pickCatalog(\''+name.replace(/'/g,"\\'")+'\')">'+
+      icon+
+      '<span class="nm">'+name+'</span>'+
+      '<span class="qty">'+upTag+'<b>'+qty+'</b></span>'+
+    '</div>';
+  }).join("") : '<div class="empty">Sem materiais — a fila está vazia.</div>';
+  document.getElementById("cMats").textContent = order.length;
+
+  stEl.innerHTML = allSt.size
+    ? '<div><b>Mesas:</b> '+[...allSt].sort((a,b)=>a.localeCompare(b)).join(" · ")+'</div>'
+    : '<div style="opacity:.55">Sem mesas — tudo obtido por loot/caça/sem estação.</div>';
+}
+
 /* ── actions ── */
-function complete(id){ if(inTodo(id)){ state.todo=state.todo.filter(x=>x!==id); state.done.push(id); view.expand.delete(id); if(view.recipe===id) view.recipe=""; save(); render(); } }
+function complete(id){ if(inTodo(id)){ state.todo=state.todo.filter(x=>x!==id); state.done.push(id); delete state.opts[id]; view.expand.delete(id); if(view.recipe===id) view.recipe=""; save(); render(); } }
 function reopen(id){ if(inDone(id)){ state.done=state.done.filter(x=>x!==id); state.todo.push(id); save(); render(); } }
-function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[]}; view.recipe=""; view.expand=new Set(); save(); render(); } }
+function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[],opts:{}}; view.recipe=""; view.expand=new Set(); save(); render(); } }
+
+/* ── tile (reusado no grid normal e na categoria Crafting) ── */
+function tileHTML(o){
+  return '<div class="tile" onclick="showRecipe(\''+o.id+'\')">'+
+    '<div class="ph">'+iconBlock(o)+'</div>'+
+    '<div class="info">'+
+      '<div class="nm" title="'+o.n+'">'+o.n+'</div>'+
+      '<div class="tags">'+
+        '<span class="tag cat">'+o.c+'</span>'+
+        (o.b ? '<span class="tag bio">'+o.b+'</span>' : "")+
+        (o.cost.length ? '<span class="tag craft">⚒ '+(o.s||"Mão")+'</span>' : "")+
+      '</div>'+
+      (view.showCost && o.cost.length ? '<div class="costline">'+costText(o)+'</div>' : "")+
+    '</div>'+
+  '</div>';
+}
 
 /* ── render ── */
 function render(){
   const q = view.q.toLowerCase();
   const avail = ITEMS.filter(o => {
     if (inTodo(o.id)||inDone(o.id)) return false;
-    if (view.cat   && o.c !== view.cat) return false;
+    if (view.cat && view.cat !== "Crafting" && o.c !== view.cat) return false;
+    if (view.cat === "Crafting" && !o.cost.length) return false;
     if (view.biome && o.b !== view.biome) return false;
     if (q && !(o.n.toLowerCase().includes(q)||o.c.toLowerCase().includes(q))) return false;
     return true;
   });
 
   const grid = document.getElementById("grid");
-  grid.innerHTML = avail.length ? avail.map(o =>
-    '<div class="tile" onclick="showRecipe(\''+o.id+'\')">'+
-      '<div class="ph">'+iconBlock(o)+'</div>'+
-      '<div class="info">'+
-        '<div class="nm" title="'+o.n+'">'+o.n+'</div>'+
-        '<div class="tags">'+
-          '<span class="tag cat">'+o.c+'</span>'+
-          (o.b ? '<span class="tag bio">'+o.b+'</span>' : "")+
-          (o.cost.length ? '<span class="tag craft">⚒</span>' : "")+
-        '</div>'+
-        (view.showCost && o.cost.length ? '<div class="costline">'+costText(o)+'</div>' : "")+
-      '</div>'+
-    '</div>'
-  ).join("") : '<div class="empty" style="grid-column:1/-1">Nenhum item disponível com esses filtros.</div>';
+  if (avail.length){
+    if (view.cat === "Crafting"){
+      const groups = {};
+      for (const o of avail){
+        const k = stationKey(o);
+        (groups[k] = groups[k] || []).push(o);
+      }
+      grid.innerHTML = Object.keys(groups).sort((a,b)=>a.localeCompare(b)).map(k =>
+        '<div class="ghead">'+k+' <span class="ghcount">'+groups[k].length+'</span></div>'+
+        groups[k].map(tileHTML).join("")
+      ).join("");
+    } else {
+      grid.innerHTML = avail.map(tileHTML).join("");
+    }
+  } else {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Nenhum item disponível com esses filtros.</div>';
+  }
   document.getElementById("cCat").textContent = avail.length;
 
   /* to-do */
   const tEl = document.getElementById("todo");
   tEl.innerHTML = state.todo.length ? state.todo.map((id,i) => {
     const o = BY_ID[id], nx = i===0, open = view.expand.has(id);
+    const qv = opt(id).q, urg = !!(state.opts[id]&&state.opts[id].u);
     const expanded = open
       ? '<div class="inrecipe" onclick="event.stopPropagation()">'+
           '<button class="rclose" title="Fechar" onclick="toggleExpand(\''+id+'\')">×</button>'+
           recipeHTML(id)+"</div>"
       : "";
-    return '<div class="item'+(nx?' next':"")+'">'+
+    const opts =
+      '<div class="itemopts" onclick="event.stopPropagation()">'+
+        '<label>qtd <select class="qsel" onchange="setQty(\''+id+'\',this.value)">'+
+          Array.from({length:99},(_,n)=>n+1).map(n=>'<option value="'+n+'"'+(n===qv?' selected':'')+'>'+n+'</option>').join("")+
+        '</select></label>'+
+        '<label class="usel'+(urg?' on':'')+'" title="Marcar como urgente" onclick="toggleUrg(\''+id+'\')">'+(urg?'● urgente':'○ urgência')+'</label>'+
+      '</div>';
+    return '<div class="item'+(nx?' next':"")+'" onclick="toggleExpand(\''+id+'\')">'+
       (nx ? '<div class="badge">▶ próximo</div>' : "")+
-      '<div class="ph" onclick="toggleExpand(\''+id+'\')">'+iconBlock(o)+'</div>'+
-      '<div class="meta" onclick="toggleExpand(\''+id+'\')">'+
-        '<div class="nm">'+o.n+'</div>'+
+      '<div class="ph" title="Remover da fila" onclick="event.stopPropagation();removeTodo(\''+id+'\')">'+iconBlock(o)+'</div>'+
+      '<div class="meta">'+
+        '<div class="nm">'+o.n+(urg?'<span class="mbadge">urg</span>':"")+'</div>'+
         '<div class="sub">'+o.c+(o.b?" · "+o.b:"")+(o.cost.length?" · "+costText(o):"")+'</div>'+
+        opts+
       '</div>'+
       '<div class="act">'+
-        '<button title="Fechar/abrir receita" onclick="event.stopPropagation();toggleExpand(\''+id+'\')">'+(open?"▾":"⚒")+'</button>'+
+        (i>0 ? '<button title="Subir na fila" onclick="event.stopPropagation();moveTodo(\''+id+'\','+(i-1)+')">↑</button>' : "")+
+        '<button title="Abrir/fechar receita" onclick="event.stopPropagation();toggleExpand(\''+id+'\')">'+(open?"▾":"⚒")+'</button>'+
         '<button title="Feito" onclick="event.stopPropagation();complete(\''+o.id+'\')">✓</button>'+
       '</div>'+
       expanded+
@@ -490,12 +672,13 @@ function render(){
   document.getElementById("cToDo").textContent   = state.todo.length;
   const total = state.todo.length + state.done.length;
   document.getElementById("bar").style.width = total ? (state.done.length/total*100)+"%" : "0%";
+  materialsBox();
   recipeBox();
 }
 
 /* ── controls ── */
 function buildChips(){
-  const cats = ["", ...[...new Set(ITEMS.map(o=>o.c))].sort((a,b)=>a.localeCompare(b))];
+  const cats = ["", ...[...new Set(ITEMS.map(o=>o.c))].sort((a,b)=>a.localeCompare(b)), "Crafting"];
   document.getElementById("chips").innerHTML = cats.map(c =>
     '<div class="chip'+(c===""?" on":"")+'" data-c="'+c+'" onclick="pickCat(this,\''+c+'\')">'+(c||"Todos")+'</div>'
   ).join("");
