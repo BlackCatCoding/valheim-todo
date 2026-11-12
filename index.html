@@ -762,19 +762,22 @@ function matTip(name){
   return '<div class="tname">'+esc(name)+'</div><div class="tmeta">'+esc(meta)+'</div>'+st+craft+drop+d+
          (wiki ? '<div class="tlinkwrap">'+wiki+'</div>' : "");
 }
-function placeTip(x, y){
-  const pad = 16, w = tipEl.offsetWidth, h = tipEl.offsetHeight;
-  let L = x + pad, T = y + pad;
-  if (L + w > innerWidth - 8)  L = x - w - pad;
-  if (T + h > innerHeight - 8) T = y - h - pad;
-  tipEl.style.left = Math.max(8, L) + "px";
-  tipEl.style.top  = Math.max(8, T) + "px";
-}
-function showTip(html, x, y){
+function showTip(html, anchor){
   tipEl.innerHTML = html;
-  placeTip(x, y);
   tipEl.classList.add("show");
   tipOn = true;
+  /* posiciona ao lado do item (nao segue o cursor) — permite entrar no tip e clicar no link */
+  const pad = 10;
+  const r = anchor ? anchor.getBoundingClientRect() : null;
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  let L = 8, T = 8;
+  if (r){
+    L = r.right + pad;
+    T = Math.max(8, Math.min(r.top, innerHeight - h - 8));
+    if (L + w > innerWidth - 8) L = Math.max(8, r.left - w - pad); // vira p/ esquerda
+  }
+  tipEl.style.left = L + "px";
+  tipEl.style.top  = T + "px";
 }
 function hideTip(){
   clearTimeout(tipTimer);
@@ -782,21 +785,17 @@ function hideTip(){
   tipOn = false;
 }
 document.addEventListener("mouseover", e => {
-  if (tipOn && e.target.closest && e.target.closest("#tip")) return; // hover no link do tip: nocaixa
+  if (tipOn && e.target.closest && e.target.closest("#tip")) return; // dentro do tip (no link): nocaixa
   const it = e.target.closest("[data-tip-for]");
   const mt = e.target.closest("[data-tip-mat]");
   clearTimeout(tipTimer);
   const target = it || mt;
   if (target){
     const html = it ? itemTip(it.dataset.tipFor) : matTip(mt.dataset.tipMat);
-    const x = e.clientX, y = e.clientY;
-    tipTimer = setTimeout(() => showTip(html, x, y), 140);
+    tipTimer = setTimeout(() => showTip(html, target), 120);
   } else {
     hideTip();
   }
-});
-document.addEventListener("mousemove", e => {
-  if (tipOn) placeTip(e.clientX, e.clientY);
 });
 document.addEventListener("scroll", hideTip, true);
 
