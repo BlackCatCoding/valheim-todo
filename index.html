@@ -170,7 +170,7 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
   background:rgba(20,12,14,.94);border:1px solid var(--line2);
   box-shadow:0 8px 28px rgba(0,0,0,.55);
   font-size:12.5px;line-height:1.45;color:var(--txt);backdrop-filter:blur(6px)}
-#tip.show{opacity:1;transform:translateY(0)}
+#tip.show{opacity:1;transform:translateY(0);pointer-events:auto}
 #tip .tname{font-size:14px;font-weight:800;color:var(--gold);margin-bottom:3px}
 #tip .tmeta{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px}
 #tip .tdesc{font-size:12.5px;color:var(--txt);line-height:1.5;margin-bottom:6px;white-space:pre-wrap}
@@ -701,9 +701,9 @@ function render(){
   recipeBox();
 }
 
-/* ── tooltip in-game (surge no hover de itens, segue o cursor) ── */
+/* ── tooltip in-game (surge no hover de itens; fixo na posicao do cursor, com tempo de graça p/ clicar no link) ── */
 const tipEl = document.getElementById("tip");
-let tipTimer = null, tipOn = false;
+let tipTimer = null, hideTimer = null, tipOn = false;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\u0022":"&quot;"}[m]));
 /* Normaliza estacao: (none) / vazio -> "Mao" */
 const stName = o => {
@@ -762,42 +762,47 @@ function matTip(name){
   return '<div class="tname">'+esc(name)+'</div><div class="tmeta">'+esc(meta)+'</div>'+st+craft+drop+d+
          (wiki ? '<div class="tlinkwrap">'+wiki+'</div>' : "");
 }
-function showTip(html, anchor){
+function showTip(html, x, y){
   tipEl.innerHTML = html;
   tipEl.classList.add("show");
   tipOn = true;
-  /* posiciona ao lado do item (nao segue o cursor) — permite entrar no tip e clicar no link */
-  const pad = 10;
-  const r = anchor ? anchor.getBoundingClientRect() : null;
+  /* colado na posicao do cursor (sem vai) — dá p/ deslizar p/ dentro do tip e clicar no link */
+  const off = 10;
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
-  let L = 8, T = 8;
-  if (r){
-    L = r.right + pad;
-    T = Math.max(8, Math.min(r.top, innerHeight - h - 8));
-    if (L + w > innerWidth - 8) L = Math.max(8, r.left - w - pad); // vira p/ esquerda
-  }
+  let L = x + off, T = y + off;
+  if (L + w > innerWidth - 8) L = Math.max(8, x - w - off);
+  if (T + h > innerHeight - 8) T = Math.max(8, y - h - off);
   tipEl.style.left = L + "px";
   tipEl.style.top  = T + "px";
+  clearTimeout(hideTimer);
 }
 function hideTip(){
-  clearTimeout(tipTimer);
-  tipEl.classList.remove("show");
-  tipOn = false;
+  /* tempo de graça: não morre na hora — dá tempo do mouse deslizar p/ dentro do tip */
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    tipEl.classList.remove("show");
+    tipOn = false;
+  }, 220);
 }
 document.addEventListener("mouseover", e => {
-  if (tipOn && e.target.closest && e.target.closest("#tip")) return; // dentro do tip (no link): nocaixa
+  // entrou no proprio tip: cancela o hide pendente e mantém aberto
+  if (tipOn && e.target.closest && e.target.closest("#tip")){
+    clearTimeout(hideTimer);
+    return;
+  }
   const it = e.target.closest("[data-tip-for]");
   const mt = e.target.closest("[data-tip-mat]");
   clearTimeout(tipTimer);
   const target = it || mt;
   if (target){
     const html = it ? itemTip(it.dataset.tipFor) : matTip(mt.dataset.tipMat);
-    tipTimer = setTimeout(() => showTip(html, target), 120);
+    const x = e.clientX, y = e.clientY;
+    tipTimer = setTimeout(() => showTip(html, x, y), 90);
   } else {
     hideTip();
   }
 });
-document.addEventListener("scroll", hideTip, true);
+document.addEventListener("scroll", () => { tipEl.classList.remove("show"); tipOn = false; }, true);
 
 /* ── controls ── */
 function buildChips(){
