@@ -163,6 +163,27 @@ main{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
 .mrow.zero .qty{color:var(--dim)}
 .mstations{margin-top:8px;font-size:10.5px;color:var(--mut);line-height:1.5}
 .mstations b{color:var(--txt);font-weight:600}
+/* ── extras na linha de material: × (remover da fila) + checkbox "peguei" ── */
+.mrm{align-self:flex-start;flex:0 0 auto;width:15px;height:15px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:4px;
+  color:var(--mut);font-size:11px;line-height:1;cursor:pointer;opacity:.85;transition:all .12s}
+.mrow:hover .mrm,.mrm:hover{opacity:1}
+.mrm:hover{border-color:var(--accent);color:#fff;background:rgba(216,72,72,.3)}
+.mchkwrap{display:flex;align-items:center;gap:4px;flex:0 0 auto;cursor:pointer;user-select:none}
+.mchkwrap input{accent-color:var(--green);cursor:pointer;width:13px;height:13px;margin:0}
+.mchkwrap .lbl{font-size:9.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px}
+.mchkwrap input:checked + .lbl{color:var(--green)}
+.mrow.got{opacity:.6}
+.mrow.got .nm{text-decoration:line-through;color:var(--green)}
+.mrow.got .qty b{color:var(--green)}
+/* materiais removidos da lista (seção restaurável) */
+.mrows-rm{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
+.rmshd{font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);margin-bottom:5px}
+.rmrow{opacity:.55}
+.rmrow:hover{opacity:.9}
+.mrm.restore{color:var(--gold);border-color:rgba(232,184,74,.4);opacity:1}
+.mrm.restore:hover{border-color:var(--gold);background:rgba(232,184,74,.15);color:#fff}
 /* ── tooltip in-game ── */
 #tip{position:fixed;z-index:999;pointer-events:none;opacity:0;transform:translateY(4px);
   transition:opacity .15s ease,transform .15s ease;
@@ -445,6 +466,8 @@ try {
 if (!state.todo) state.todo = [];
 if (!state.done) state.done = [];
 if (!state.opts) state.opts = {};
+if (!state.matsGathered) state.matsGathered = {};
+if (!state.matsRemoved) state.matsRemoved = [];
 let view = { q:"", cat:"", biome:"", showCost:false, recipe:"", expand:new Set() };
 function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
 const inTodo = id => state.todo.includes(id);
@@ -453,6 +476,22 @@ const inDone = id => state.done.includes(id);
 const opt = id => state.opts[id] || {q:1};
 function setQty(id,v){ v=Math.max(1,Math.min(99,parseInt(v)||1)); state.opts[id]={...(state.opts[id]||{}),q:v}; save(); render(); }
 function toggleUrg(id){ const u=!(state.opts[id]&&state.opts[id].u); state.opts[id]={...(state.opts[id]||{}),u}; save(); render(); }
+/* confirma que o material da lista foi pego (checkbox "peguei") */
+function toggleMatGathered(name){
+  state.matsGathered[name] = !state.matsGathered[name];
+  save(); render();
+}
+/* remove um material da lista de "materiais necessários" (× no canto sup. esquerdo) */
+function removeMatRow(name){
+  if(!state.matsRemoved.includes(name)) state.matsRemoved.push(name);
+  delete state.matsGathered[name];
+  save(); render();
+}
+/* devolve um material removido de volta para a lista de "materiais necessários" */
+function restoreMatRow(name){
+  state.matsRemoved = state.matsRemoved.filter(n => n!==name);
+  save(); render();
+}
 
 /* remove um item DA FILA sem marcá-lo como feito (a caixa de materiais
    não reflete mais; ele volta a aparecer no catálogo) */
@@ -572,20 +611,68 @@ function materialsBox(){
     }
   }
 
-  rowsEl.innerHTML = order.length ? order.map(name => {
-    const qty = agg[name], up = agg["^"+name];
+  const removedSet = new Set(state.matsRemoved);
+  /* lista principal: só materiais ainda não removidos */
+  const visible = order.filter(n => !removedSet.has(n));
+  /* removidos que ainda "pertencem" à fila (para poder restaurar) */
+  const removedRelevant = state.matsRemoved.filter(n => (n in agg));
+
+  const matIconRow = name => {
     const ic = MAT_ICON[name.toLowerCase()];
-    const icon = ic
+    return ic
       ? '<span class="rmic"><img loading="lazy" src="'+ICON(ic)+'" alt="" onerror="this.outerHTML=catGlyph(\'Material\')"></span>'
       : '<span class="rmic">'+catGlyph("Material")+'</span>';
-    const upTag = up ? '<span class="up">+'+up+'/nv</span> ' : "";
-    return '<div class="mrow" data-tip-mat="'+esc(name)+'" onclick="pickCatalog(\''+name.replace(/'/g,"\\'")+'\')">'+
-      icon+
-      '<span class="nm">'+esc(name)+'</span>'+
-      '<span class="qty">'+upTag+'<b>'+qty+'</b></span>'+
-    '</div>';
-  }).join("") : '<div class="empty">Sem materiais — a fila está vazia.</div>';
-  document.getElementById("cMats").textContent = order.length;
+  };
+
+  rowsEl.innerHTML = "";
+  if (visible.length){
+    for (const name of visible){
+      const qty = agg[name], up = agg["^"+name];
+      const got = !!state.matsGathered[name];
+      const qEsc = name.replace(/'/g,"\\'");
+      const upTag = up ? '<span class="up">+'+up+'/nv</span> ' : "";
+      const row = document.createElement("div");
+      row.className = "mrow"+(got?" got":"");
+      row.dataset.tipMat = name;
+      row.onclick = function(){ pickCatalog(name); };
+      row.innerHTML =
+        '<button class="mrm" title="Remover da lista de materiais" onclick="event.stopPropagation();removeMatRow(\''+qEsc+'\')">×</button>'+
+        matIconRow(name)+
+        '<span class="nm">'+esc(name)+'</span>'+
+        '<span class="qty">'+upTag+'<b>'+qty+'</b></span>'+
+        '<label class="mchkwrap" onclick="event.stopPropagation()"><input type="checkbox"'+(got?' checked':'')+' onchange="toggleMatGathered(\''+qEsc+'\')"><span class="lbl">peguei</span></label>';
+      rowsEl.appendChild(row);
+    }
+  } else {
+    const em = document.createElement("div");
+    em.className = "empty";
+    em.textContent = "Sem materiais — a fila está vazia.";
+    rowsEl.appendChild(em);
+  }
+  document.getElementById("cMats").textContent = visible.length;
+
+  /* seção de materiais removidos (com botão de restaurar) */
+  if (removedRelevant.length){
+    const wrap = document.createElement("div");
+    wrap.className = "mrows-rm";
+    wrap.innerHTML = '<div class="rmshd">Removidos — clique para trazer de volta</div>';
+    for (const name of removedRelevant){
+      const up = agg["^"+name];
+      const upTag = up ? '<span class="up">+'+up+'/nv</span> ' : "";
+      const qEsc = name.replace(/'/g,"\\'");
+      const row = document.createElement("div");
+      row.className = "mrow rmrow";
+      row.dataset.tipMat = name;
+      row.onclick = function(){ pickCatalog(name); };
+      row.innerHTML =
+        '<button class="mrm restore" title="Restaurar para a lista" onclick="event.stopPropagation();restoreMatRow(\''+qEsc+'\')">×</button>'+
+        matIconRow(name)+
+        '<span class="nm">'+esc(name)+'</span>'+
+        '<span class="qty">'+upTag+'<b>'+agg[name]+'</b></span>';
+      wrap.appendChild(row);
+    }
+    rowsEl.appendChild(wrap);
+  }
 
   stEl.innerHTML = allSt.size
     ? '<div><b>Mesas:</b> '+[...allSt].sort((a,b)=>a.localeCompare(b)).join(" · ")+'</div>'
@@ -595,7 +682,7 @@ function materialsBox(){
 /* ── actions ── */
 function complete(id){ if(inTodo(id)){ state.todo=state.todo.filter(x=>x!==id); state.done.push(id); delete state.opts[id]; view.expand.delete(id); if(view.recipe===id) view.recipe=""; save(); render(); } }
 function reopen(id){ if(inDone(id)){ state.done=state.done.filter(x=>x!==id); state.todo.push(id); save(); render(); } }
-function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[],opts:{}}; view.recipe=""; view.expand=new Set(); save(); render(); } }
+function resetAll(){ if(confirm("Zerar fila e feitos?")){ state={todo:[],done:[],opts:{},matsGathered:{},matsRemoved:[]}; view.recipe=""; view.expand=new Set(); save(); render(); } }
 
 /* ── tile (reusado no grid normal e na categoria Crafting) ── */
 function tileHTML(o){
